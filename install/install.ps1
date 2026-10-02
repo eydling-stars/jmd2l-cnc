@@ -137,8 +137,7 @@ foreach ($f in @('README.md', 'CONTEXT.md', 'CHANGELOG.md')) {
 if (Test-Path (Join-Path $InstallDir "server\node_modules\serialport")) {
   Say "Зависимости сервера: из комплекта (интернет не нужен)" "DarkGray"
 } else {
-  Say "ВНИМАНИЕ: нет server\node_modules. При первом запуске панель попросит" "Yellow"
-  Say "          Node из интернета. Пересоберите комплект на машине с сетью." "Yellow"
+  Say "Зависимостей сервера в комплекте нет — поставлю сам, интернет нужен." "DarkGray"
 }
 
 # ---- инструменты прошивки ------------------------------------------------------
@@ -198,8 +197,11 @@ if (-not (Test-Path $depProbe)) {
   $npmLog = Join-Path $env:TEMP "jmd2l-npm.log"
   # npm пишет прогресс в stderr, а при $ErrorActionPreference = Stop PowerShell
   # принимает это за ошибку и роняет установщик. Поэтому отдельный процесс.
-  Start-Process $npm `
-    -ArgumentList @("--prefix", (Join-Path $InstallDir "server"), "install", "--no-audit", "--no-fund") `
+  # Каталог задаём через -WorkingDirectory, а не --prefix: в npm 6, который
+  # едет в Node 12.22.12, `npm install --prefix <путь>` не находит package.json
+  # и падает с ENOLOCAL.
+  Start-Process $npm -WorkingDirectory (Join-Path $InstallDir "server") `
+    -ArgumentList @("install", "--no-audit", "--no-fund") `
     -Wait -NoNewWindow -RedirectStandardOutput $npmLog -RedirectStandardError "$npmLog.err" | Out-Null
   if (-not (Test-Path $depProbe)) {
     Get-Content $npmLog, "$npmLog.err" -ErrorAction SilentlyContinue | ForEach-Object { Say "  $_" "DarkGray" }
