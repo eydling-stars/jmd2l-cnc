@@ -84,7 +84,10 @@ Say "Система: $($cv.ProductName) $($cv.DisplayVersion) ($bits)"
 Say "Папка установки: $InstallDir"
 
 # ---- что отдаём ---------------------------------------------------------------
-foreach ($need in @('server\server.js', 'web\index.html', 'server\node_modules\serialport\package.json')) {
+# server\node_modules в списке обязательного нет намеренно: в клоне с GitHub его
+# не бывает, а установщик теперь ставит зависимости сам, ниже. Проверка на
+# обязательные файлы нужна только чтобы отсечь чужую папку.
+foreach ($need in @('server\server.js', 'web\index.html', 'server\package.json')) {
   if (-not (Test-Path (Join-Path $SourceDir $need))) { Die "Не найдено: $need`nИсточник ($SourceDir) не похож на этот проект." }
 }
 if (-not (Test-Path $Payload)) {
@@ -181,6 +184,34 @@ Remove-Item (Join-Path $env:TEMP "jmd2l-node") -Recurse -Force -ErrorAction Sile
 if (-not (Test-Path (Join-Path $nodeDir "node.exe"))) { Die "node.exe не распаковался." }
 $ver = (& (Join-Path $nodeDir "node.exe") -v) 2>$null
 Say "Node.js внутри: $ver"
+
+# ---- зависимости сервера -----------------------------------------------------
+# В поставке, собранной разработчиком, server\node_modules уже на месте и сеть
+# не нужна. В клоне с GitHub его нет, а ставить панель нельзя: сервер не
+# найдёт serialport. Поэтому в этом единственном случае доустанавливаем сами
+# тем Node, что только распаковали, — системный Node не требуется.
+$depProbe = Join-Path $InstallDir "server\node_modules\serialport\package.json"
+if (-not (Test-Path $depProbe)) {
+  Say "Зависимости сервера не найдены, ставлю (интернет, один раз)..."
+  $npm = Join-Path $nodeDir "npm.cmd"
+  if (-not (Test-Path $npm)) { Die "В комплекте Node.js нет npm.cmd: $npm" }
+  $npmLog = Join-Path $env:TEMP "jmd2l-npm.log"
+  # npm пишет прогресс в stderr, а при $ErrorActionPreference = Stop PowerShell
+  # принимает это за ошибку и роняет установщик. Поэтому отдельный процесс.
+  Start-Process $npm `
+    -ArgumentList @("--prefix", (Join-Path $InstallDir "server"), "install", "--no-audit", "--no-fund") `
+    -Wait -NoNewWindow -RedirectStandardOutput $npmLog -RedirectStandardError "$npmLog.err" | Out-Null
+  if (-not (Test-Path $depProbe)) {
+    Get-Content $npmLog, "$npmLog.err" -ErrorAction SilentlyContinue | ForEach-Object { Say "  $_" "DarkGray" }
+    Die @"
+Не поставились зависимости сервера. Подробности: $npmLog
+Поставьте их вручную:
+  cd /d "$SourceDir\server"
+  npm install
+"@
+  }
+  Say "Зависимости поставлены." "Green"
+}
 
 # ---- ярлык запуска -----------------------------------------------------------
 # Имя лаунчера латиницей: содержимое .cmd читает cmd.exe в системной кодировке,
