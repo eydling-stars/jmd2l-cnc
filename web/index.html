@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JMD-2L CNC</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">JMD-2L <span>CNC</span></div>
+  <div class="conn">
+    <!-- Поле состояния стоит в шапке, чтобы быть видно всегда: что система
+         делает сейчас — ждёт шпиндель или уже следит за оборотами и током.
+         Зелёный — работа идёт штатно, красный — авария. -->
+    <span id="sysState" class="sysst" title="нет связи с платой">нет связи</span>
+    <span id="connState" class="dot">нет связи</span>
+    <span class="dim">порт</span>
+    <select id="portSel" title="COM-порт, к которому подключена плата"></select>
+    <button id="btnConnect">Подключить</button>
+    <span id="fw" class="dim"></span>
+    <!-- Ответ платы живёт в шапке рядом с версией прошивки: раньше это была
+         отдельная строка под журналом, и она съедала 30 px высоты, ради которых
+         графики пришлось бы урезать. -->
+    <span id="lastReply" class="dim"></span>
+  </div>
+  <button id="btnStopAll" class="danger" title="пробел">■ СТОП ВСЁ</button>
+  <!-- Здесь показывается, что скорость или длина хода уже записаны в плату.
+       Без такой подписи сохранение выглядит как «ничего не произошло» —
+       плата отвечает молча, и оператор не знает, переживёт ли настройка
+       выключение питания. -->
+  <span id="savedTag" class="tag ok hidden"></span>
+</header>
+
+<nav>
+  <button id="tabMain" class="tab active">Управление</button>
+  <button id="tabSets" class="tab">Настройки</button>
+  <button id="tabSetup" class="tab">Пусконаладка</button>
+  <button id="tabBench" class="tab">Стенд</button>
+</nav>
+
+<!-- Блок стенда лежит внутри основной сетки: на вкладке «Стенд» он встаёт на
+     место графика, а под ним — та же самая страница управления, что и везде. -->
+<section id="viewMain" class="main-grid">
+
+<section id="viewBench" class="hidden">
+  <div class="card benchcard">
+    <h3>Мекетный стенд: подмена датчиков
+      <span class="tools">
+        <button id="bnSim" class="accent mini off">Эмуляция: ВЫКЛ</button>
+      </span></h3>
+    <div class="help">Стенд работает на живой плате: защита и приводы настоящие.
+      Ниже — обычная страница управления. Включите «Эмуляцию» — плата получит
+      обороты и ток с ползунков, а концевики с кнопок, вместо датчиков. В EEPROM
+      платы стенд не пишет. Ползунки стоят на нуле, и это не сбой: взвод защиты
+      ждёт обороты выше порога, а ноль ниже любого порога, — поэтому при нулях
+      защита не взводится и авария сама не встанет. Поднимите обороты — взведётся.</div>
+
+    <div class="bgrid">
+      <div class="bar">
+        <span class="dim lbl">концевики</span>
+        <span class="bar" id="benchLim"></span>
+        <button data-act="smLimOff" class="mini">Все отпустить</button>
+      </div>
+
+      <!-- Виртуальные обороты и ток — в той же форме, что карточка «Шпиндель»:
+           видно, что именно плата получает вместо датчиков. -->
+      <div class="bsub">
+        <div class="cell">
+          <div class="crow"><span class="dim">обороты</span><span class="tag dim">виртуальные</span></div>
+          <span class="big"><b id="smRpmVal">0</b> <span class="dim">об/мин</span></span>
+          <input type="range" id="smRpm" min="0" max="6000" step="10" value="0">
+        </div>
+
+        <div class="cell">
+          <div class="crow"><span class="dim">ток</span><span class="tag dim">виртуальный</span></div>
+          <span class="big"><b id="smCurVal">0.0</b> <span class="dim">А</span></span>
+          <input type="range" id="smCur" min="0" max="200" step="1" value="0">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+  <div id="faultBox" class="fault hidden">
+    <div><b id="faultText"></b> <span id="faultMeta" class="dim"></span></div>
+    <button id="btnResetFault" class="mini">Сбросить аварию</button>
+  </div>
+
+  <div class="card" id="spindle">
+    <h3>Шпиндель
+      <span class="tools">
+        <button id="btnChart" class="mini">скрыть графики</button>
+      </span>
+    </h3>
+    <!-- Ячейки одинаковой формы: подпись с плашкой одной строкой, крупное
+         значение под ними. Сетка 2×3, а не 3+2: карточка растянута по высоте
+         блока «Безопасность», и на 3+2 между подписью и числом оставалось
+         54 px пустоты. Порядок в разметке = порядок в сетке: последняя
+         ячейка на две колонки, поэтому идёт последней. -->
+    <div class="grid3 spgrid">
+      <div class="cell">
+        <div class="crow"><span class="dim">обороты</span><span id="rpmState" class="tag">—</span></div>
+        <span class="big" id="rpmVal">—</span>
+      </div>
+      <div class="cell">
+        <div class="crow"><span class="dim">ток</span><span id="curState" class="tag">—</span></div>
+        <span class="big" id="curVal">—</span>
+      </div>
+      <div class="cell">
+        <div class="crow"><span class="dim">реле аварии</span><span id="relayState" class="tag dim">не сработало</span></div>
+        <span class="big" id="relayVal">—</span>
+      </div>
+      <div class="cell">
+        <div class="crow"><span class="dim">время работы</span><span id="runState" class="tag dim">шпиндель стоит</span></div>
+        <span class="big" id="runVal">0:00</span>
+      </div>
+      <!-- Как близко шпиндель дошёл до порога взвода защиты. Нужно на станке:
+           по этой строке видно, почему защита молчит, пока не взвелась. -->
+      <div class="cell span2">
+        <div class="crow"><span class="dim">вращение — порог взвода защиты</span><span id="armBarState" class="tag">—</span></div>
+        <span class="big" id="armBarVal">—</span>
+        <div class="pbar"><i id="armBarFill"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="protCard">
+    <h3>Безопасность
+      <span class="tools">
+        <span class="tag" id="armState">—</span>
+      </span>
+    </h3>
+    <div class="prot-top">
+      <button id="protToggle" class="protbtn">Защита: ВКЛ</button>
+      <!-- Формулировки оператора. Список в настройках (METHODS в settings.js)
+           должен совпадать с этим — это одна и та же настройка. -->
+      <select id="protSel" title="что именно контролируем">
+        <option value="1">Обороты MIN</option>
+        <option value="2">Обороты MIN + MAX</option>
+        <option value="3">Ток</option>
+        <option value="4">Обороты и ток</option>
+        <option value="5">Обороты MIN + Ток</option>
+      </select>
+    </div>
+    <div id="protWarn" class="warn hidden">Защита отключена — контроль оборотов и тока не выполняется.</div>
+    <!-- Сетка 2×3: пять уставок и кнопка. На три колонки поле «порог взвода» было
+         шириной 35 px — четыре цифры, то есть 1200 об/мин уже не ввести.
+         Подпись каждой уставки в `<span class="t">`: сетка внутри ячейки держит
+         подпись, поле и единицу в своих колонках, а голый текст в сетку не
+         попадает. -->
+    <div class="thr">
+      <label title="Авария, если обороты упали НИЖЕ этого значения (через время подтверждения)"><span class="t">обороты min</span>
+        <input id="thrRpmLo" type="number" min="0" max="6000" step="10"> <span class="u">об/мин</span>
+      </label>
+      <label title="Авария, если обороты ушли ВЫШЕ этого значения. 0 = не проверять."><span class="t">обороты max</span>
+        <input id="thrRpmHi" type="number" min="0" max="6000" step="10"> <span class="u">об/мин</span>
+      </label>
+      <label title="Авария, если ток двигателя вышел ВЫШЕ этого значения (закусывание)"><span class="t">ток выше</span>
+        <input id="thrCur" type="number" min="0.1" max="20" step="0.1"> <span class="u">А</span>
+      </label>
+      <label title="Сколько после взвода ещё НЕ проверять: пусковой бросок мотора даёт 15–20 А. 0 = проверять сразу."><span class="t">вращение</span>
+        <input id="thrSpin" type="number" min="0" max="60000" step="10"> <span class="u">мс</span>
+      </label>
+      <label title="Защита взводится, когда обороты перевалили это значение. Тот же порог плата считает «шпиндель пошёл» и по нему разрешает ход стола."><span class="t">порог взвода</span>
+        <input id="thrArm" type="number" min="0" max="6000" step="10"> <span class="u">об/мин</span>
+      </label>
+      <button id="thrApply" class="accent" title="Записать в память платы только то, что стоит в этой карточке: включение и метод защиты и пять уставок. Скорости и длины хода сохраняются сами, пресеты — кнопкой в «Настройках»">Применить</button>
+    </div>
+    </div>
+
+  <div id="axes"></div>
+
+  <!-- Два маленьких графика рядом: обороты и ток отдельно. Общий холст был
+       слишком высоким, а его правую шкалу приходилось рисовать лишь затем,
+       чтобы «А» не спорили с «об/мин» на одной вертикали. -->
+  <div class="card" id="chartRpmCard">
+    <h3>Обороты
+      <span class="tools">
+        <span class="lg"><i class="sw sw-rpm"></i><span id="lgRpm">—</span></span>
+      </span>
+    </h3>
+    <div class="chartbox"><canvas id="chartRpm"></canvas></div>
+  </div>
+
+  <div class="card" id="chartCurCard">
+    <h3>Ток
+      <span class="tools">
+        <span class="lg"><i class="sw sw-cur"></i><span id="lgCur">—</span></span>
+      </span>
+    </h3>
+    <div class="chartbox"><canvas id="chartCur"></canvas></div>
+  </div>
+
+  <div class="card" id="logCard">
+    <h3>Журнал
+      <span class="tools">
+        <button id="logPause" class="mini">пауза</button>
+        <button id="logClear" class="mini">очистить</button>
+        <button id="logDl" class="mini">скачать</button>
+      </span>
+    </h3>
+    <pre id="logList" class="log"></pre>
+  </div>
+</section>
+
+<section id="viewSets" class="hidden">
+  <div id="sets"></div>
+  <div class="card bar">
+    <button id="btnSave" class="accent" disabled
+            title="Записать настройки в EEPROM платы — они переживут перезагрузку">Сохранить в плату</button>
+    <button id="btnRevert">Отменить (перечитать)</button>
+    <button id="btnDefaults">По умолчанию</button>
+    <span id="cfgState" class="dim"></span>
+  </div>
+</section>
+
+<section id="viewSetup" class="hidden">
+  <div class="card">
+    <h3>Пусконаладка
+      <span class="tools"><span class="tag dim" id="setupProg">0 из 7</span></span>
+    </h3>
+    <!-- Общий прогресс: видно, сколько пунктов закрыто, не перечитывая все
+         семь заголовков. Полоса — та же, что в карточке «Шпиндель». -->
+    <div class="pbar"><i id="setupFill"></i></div>
+    <div class="help">
+      Пройдите по пунктам один раз, когда станок собран. Порядок важен: сначала
+      датчики, потом приводы, потом концевики. Каждый пункт: нажать кнопку →
+      посмотреть результат → исправить, если не так → отметить выполненным.
+      Отметки хранятся в браузере и на плату не влияют.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">1</span> Датчик тока
+      <span class="tag dim" data-state="cur">не проверено</span></h3>
+    <ol class="help">
+      <li>Шпиндель выключен, ключ на станке — в положении «0».</li>
+      <li>Нажмите «Калибровать ноль»: плата замеряет выход датчика 0.5 с и
+        записывает его в настройки.</li>
+      <li>Включите шпиндель: ток на главном экране должен стать 2–6 А.
+        Если 0 — датчик не подключён; если больше 15 А — перепутана
+        полярность или чувствительность (100 мВ/А для ACS712-20A).</li>
+    </ol>
+    <div class="bar">
+      <button data-act="curCal" class="accent">Калибровать ноль</button>
+      <span class="live" id="spCur0">—</span>
+      <button data-ok="cur" class="okbtn">отметить выполненным</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">2</span> Тахометр
+      <span class="tag dim" data-state="tach">не проверено</span></h3>
+    <ol class="help">
+      <li>Посчитайте прорези диска тахометра (обычно 100) и впишите их.</li>
+      <li>Вращайте вал рукой: обороты на главном экране должны расти, а счётчик
+        не должен скакать при ровном вращении.</li>
+      <li>Если счётчик дёргается — поднимите «фильтр помех» в настройках.</li>
+    </ol>
+    <div class="bar">
+      <label>импульсов на оборот
+        <input id="spPpr" type="number" min="1" max="2000" step="1" style="width:90px">
+      </label>
+      <button data-act="tachSave" class="accent">Записать</button>
+      <button data-act="tachClr">Обнулить счётчик</button>
+      <span class="live" id="spRpm">—</span>
+      <button data-ok="tach" class="okbtn">отметить выполненным</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">3</span> Концевики
+      <span class="tag dim" data-state="lim">не проверено</span></h3>
+    <ol class="help">
+      <li>Нажмите концевик пальцем: его индикатор ниже должен загореться.</li>
+      <li>Если гаснет вместо зажигания — нажмите «Полярность наоборот».</li>
+      <li>Ход от нажатого концевика должен блокироваться, обратный — идти.
+        Пока не заработает, ход не запустится: плата пишет
+        «ПУТЬ К КОНЦЕВИКУ ЗАКРЫТ».</li>
+    </ol>
+    <div class="bar" id="limRows"></div>
+    <div class="bar">
+      <button data-act="limPol">Полярность наоборот</button>
+      <span class="live" id="spLimN">—</span>
+      <button data-ok="lim" class="okbtn">отметить выполненным</button>
+    </div>
+    <div class="help">Провода не подключены — все четыре горят: это нормально,
+      плата читает висящие входы как нажатые. С подключёнными концевиками
+      должен гореть только нажатый. Если не так, мультиметром проверьте
+      +5 В на D3, D4, D10, D12 при отпущенном концевике.</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">4</span> Шаги на миллиметр
+      <span class="tag dim" data-state="mm">не проверено</span></h3>
+    <ol class="help">
+      <li>Шпиндель должен вращаться, иначе защита не даст ход (плата пишет
+        «ШПИНДЕЛЬ НЕ ВРАЩАЕТСЯ»). Включите шпиндель или снимите защиту
+        кнопкой на главном экране.</li>
+      <li>Ось должна быть в свободном ходу (ход примерно 20 мм).</li>
+      <li>Нажмите «1 оборот» — ось провернётся ровно на столько шагов, сколько
+        стоит в DIP драйвера. Рулеткой измерьте, сколько миллиметров прошла
+        ось.</li>
+      <li>Впишите путь и нажмите «Рассчитать»: плата пересчитает
+        микрометров на оборот и сохранит.</li>
+    </ol>
+    <table class="mmtab">
+      <tr>
+        <th>ось</th><th>сейчас</th><th>ход</th><th>измерили, мм</th><th></th><th>итог</th>
+      </tr>
+      <tr>
+        <td>X</td>
+        <td class="live" id="spMmX">—</td>
+        <td><button data-act="turn" data-ax="0">1 оборот +</button></td>
+        <td><input id="spLen0" type="number" min="0.1" max="500" step="0.1"></td>
+        <td><button data-act="calc" data-ax="0">Рассчитать</button></td>
+        <td class="live" id="spCalc0">—</td>
+      </tr>
+      <tr>
+        <td>Y</td>
+        <td class="live" id="spMmY">—</td>
+        <td><button data-act="turn" data-ax="1">1 оборот +</button></td>
+        <td><input id="spLen1" type="number" min="0.1" max="500" step="0.1"></td>
+        <td><button data-act="calc" data-ax="1">Рассчитать</button></td>
+        <td class="live" id="spCalc1">—</td>
+      </tr>
+    </table>
+    <div class="bar"><button data-ok="mm" class="okbtn">отметить выполненным</button></div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">5</span> Направление осей
+      <span class="tag dim" data-state="dir">не проверено</span></h3>
+    <ol class="help">
+      <li>Нажмите «Проверить»: ось поедет на 2 мм в плюс.</li>
+      <li>Если позиция растёт — верно. Если убывает — нажмите
+        «Инвертировать» и проверьте ещё раз.</li>
+      <li>Ось при этом должна быть готова к ходу (см. пункт 4).</li>
+    </ol>
+    <!-- Кнопку «отметить выполненным» setup.js переносит в строку оси Y: она
+         относится к обеим осям, а висела отдельной строкой под таблицей и
+         терялась. -->
+    <div id="dirRows"></div>
+    <div class="bar" id="dirOk"><button data-ok="dir" class="okbtn">отметить выполненным</button></div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">6</span> Реле аварии
+      <span class="tag dim" data-state="rel">не проверено</span></h3>
+    <ol class="help">
+      <li>Нажмите «Включить реле» — реле должно щёлкнуть, светодиод на плате
+        загореться.</li>
+      <li>Затем «Отключить» — реле возвращается под управление защиты.</li>
+    </ol>
+    <div class="bar">
+      <button data-act="relOn">Включить реле</button>
+      <button data-act="relOff">Отключить</button>
+      <span class="live" id="spRel">—</span>
+      <button data-ok="rel" class="okbtn">отметить выполненным</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">7</span> Защита от закусывания
+      <span class="tag dim" data-state="prot">не проверено</span></h3>
+    <ol class="help">
+      <li>На главном экране задайте обороты и ток под заготовку.</li>
+      <li>Закрутите вал вручную на ходу — защита должна сработать на падении
+        оборотов (если датчик подключён и выбран метод 1, 2 или 4).</li>
+      <li>Кнопка сброса аварии на главном экране должна снимать её.</li>
+    </ol>
+    <div class="bar">
+      <button data-act="toMain" class="accent">Перейти на главный экран</button>
+      <button data-ok="prot" class="okbtn">отметить выполненным</button>
+    </div>
+  </div>
+</section>
+
+
+<footer class="dim">
+  ← → — ось X, ↑ ↓ — ось Y (удержание), пробел — СТОП ВСЁ · у хода две кнопки со стрелкой — они и задают сторону
+</footer>
+
+<script src="app.js"></script>
+<script src="settings.js"></script>
+<script src="setup.js"></script>
+<script src="bench.js"></script>
+</body>
+</html>

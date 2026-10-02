@@ -1,0 +1,23 @@
+# Зависимости Node.js — ставятся один раз: npm install в папке server\
+node_modules/
+
+# Разовое содержимое для установки — вне git, весит 351 МБ.
+# Собирается локально, в репозитории его нет:
+#   payload\node-v*.zip    Node.js 12.22.12   -> install\fetch-node.ps1
+#   payload\arduino\       arduino-cli, avr-gcc, ядро AVR, avrdude (333 МБ)
+#                                              -> install\fetch-arduino.ps1
+# Смысл: это чужие бинарники, их место — на диске у того, кто ставит.
+install/payload/
+
+# Артефакты сборки прошивки
+firmware/*/.build/
+
+# Настройки станка: порт, имя станка. Личные, не для репозитория
+server/config.json
+
+# Протокол последнего прогона стенда
+bench/last-run.txt
+
+# Windows
+Thumbs.db
+desktop.ini

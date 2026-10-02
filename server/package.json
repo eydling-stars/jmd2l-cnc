@@ -1,0 +1,13 @@
+{
+  "name": "jmd2l-cnc-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Сервер панели JMD-2L CNC: USB-serial ↔ веб-интерфейс",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "serialport": "10.0.0"
+  }
+}

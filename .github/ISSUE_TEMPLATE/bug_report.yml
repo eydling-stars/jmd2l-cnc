@@ -1,0 +1,54 @@
+name: Ошибка или вопрос
+description: Проблема с панелью, прошивкой или подключением
+title: ""
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо. Чем полнее описание, тем быстрее разберёмся.
+        Ошибки безопасности и защиты станка — в первую очередь.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось
+      description: Что делали и что получилось вместо ожидаемого
+      placeholder: Панель пишет «нет связи», хотя плата подключена и в диспетчере устройств есть COM4
+    validations:
+      required: true
+
+  - type: textarea
+    id: text
+    attributes:
+      label: Текст из журнала
+      description: Строки из журнала панели или окна, где запускали скрипт. Скопировать можно целиком
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows и версия
+      placeholder: Windows 10 22H2
+    validations:
+      required: false
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Железо
+      description: Плата, драйверы, датчики — если дело в подключении
+      placeholder: Arduino Nano, DM542 ×2, ACS712-20A
+    validations:
+      required: false
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Прошивка
+      description: Из репозитория или своя сборка
+      placeholder: firmware\prebuilt\jmd2l_cnc.ino.hex
+    validations:
+      required: false
